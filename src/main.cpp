@@ -1,3 +1,4 @@
+#include "json.hpp"
 #include <math.h>
 #include <uWS/uWS.h>
 #include <chrono>
@@ -7,7 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "MPC.h"
-#include "json.hpp"
+#include <cppad/cppad.hpp>
 
 // for convenience
 using json = nlohmann::json;
@@ -71,8 +72,14 @@ int main() {
   // MPC is initialized here!
   MPC mpc;
 
+#ifdef UWS_VCPKG
+  h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER>*ws, char *data, size_t length,
+    uWS::OpCode opCode) {
+#else
   h.onMessage([&mpc](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                     uWS::OpCode opCode) {
+    uWS::OpCode opCode) {
+#endif
+  
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -98,12 +105,47 @@ int main() {
           * Both are in between [-1, 1].
           *
           */
+
+          double steering = j[1]["steering_angle"];
+          double throttle = j[1]["throttle"];
+          
+          // Translating to vehicle coordinates
+          for(int i=0;i<ptsx.size();i++){
+            double dX = ptsx[i]-px;
+            double dY = ptsy[i]-py;
+            ptsx[i] = dX * cos(psi) + dY * sin(psi);
+            ptsy[i] = dY * cos(psi) - dX * sin(psi);
+          }
+
+          Eigen::VectorXd ptsxV = Eigen::VectorXd::Map(ptsx.data(), ptsx.size());
+          Eigen::VectorXd ptsyV = Eigen::VectorXd::Map(ptsy.data(), ptsy.size());
+
+          auto coeffs = polyfit(ptsxV, ptsyV, 3);
+          // Define the state vector.
+          Eigen::VectorXd state(6);
+          
+          const double Lf = 2.67;
+          double delay = 0.1;
+          double px_l =v*delay;
+          double py_l =0.0;
+          double psi_l = -v * steering / Lf * delay;
+          double v_l = v+throttle*delay;
+          double cte_l =  polyeval(coeffs, 0) + v * CppAD::sin(-atan(coeffs[1])) * delay;
+          double epsi_l = -atan(coeffs[1])+psi_l;
+		  
+          state << px_l, py_l, psi_l, v_l, cte_l, epsi_l;
+		  
+          std::vector<double> r;
+          r = mpc.Solve(state, coeffs);
+          
           double steer_value;
           double throttle_value;
 
           json msgJson;
           // NOTE: Remember to divide by deg2rad(25) before you send the steering value back.
           // Otherwise the values will be in between [-deg2rad(25), deg2rad(25] instead of [-1, 1].
+          steer_value = r[0]/ (deg2rad(25)*Lf);
+          throttle_value = r[1]*(1-fabs(steer_value))+0.1;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = throttle_value;
 
@@ -113,6 +155,13 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Green line
+         for ( int i = 2; i < r.size(); i++ ) {
+            if ( i % 2 == 0 ) {
+              mpc_x_vals.push_back( r[i] );
+            } else {
+              mpc_y_vals.push_back( r[i] );
+            }
+          }
 
           msgJson["mpc_x"] = mpc_x_vals;
           msgJson["mpc_y"] = mpc_y_vals;
@@ -123,13 +172,20 @@ int main() {
 
           //.. add (x,y) points to list here, points are in reference to the vehicle's coordinate system
           // the points in the simulator are connected by a Yellow line
+          double poly_inc = 2.5;
+          int num_points = 25;
+          for ( int i = 0; i < num_points; i++ ) {
+            double x = poly_inc * i;
+            next_x_vals.push_back( x );
+            next_y_vals.push_back( polyeval(coeffs, x) );
+          }
 
           msgJson["next_x"] = next_x_vals;
           msgJson["next_y"] = next_y_vals;
 
 
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           // Latency
           // The purpose is to mimic real driving conditions where
           // the car does actuate the commands instantly.
@@ -140,12 +196,21 @@ int main() {
           // NOTE: REMEMBER TO SET THIS TO 100 MILLISECONDS BEFORE
           // SUBMITTING.
           this_thread::sleep_for(chrono::milliseconds(100));
+#ifdef UWS_VCPKG
+          ws->send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+#else
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+#endif
         }
       } else {
         // Manual driving
         std::string msg = "42[\"manual\",{}]";
+#ifdef UWS_VCPKG
+        ws->send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+#else
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+#endif
+
       }
     }
   });
@@ -164,6 +229,19 @@ int main() {
     }
   });
 
+#ifdef UWS_VCPKG
+
+  h.onConnection([&h](uWS::WebSocket<uWS::SERVER>*ws, uWS::HttpRequest req) {
+    std::cout << "Connected!!!" << std::endl;
+  });
+
+  h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER>*ws, int code,
+    char *message, size_t length) {
+    ws->close();
+    std::cout << "Disconnected" << std::endl;
+  });
+#else
+
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
     std::cout << "Connected!!!" << std::endl;
   });
@@ -173,9 +251,10 @@ int main() {
     ws.close();
     std::cout << "Disconnected" << std::endl;
   });
+#endif
 
   int port = 4567;
-  if (h.listen(port)) {
+  if (h.listen("127.0.0.1", port)) {
     std::cout << "Listening to port " << port << std::endl;
   } else {
     std::cerr << "Failed to listen to port" << std::endl;
