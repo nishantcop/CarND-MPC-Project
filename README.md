@@ -1,8 +1,11 @@
+[model]: ./image/eqns.png "model"
+[final]: ./image/mpc_final.gif "Final run on track"
 # CarND-Controls-MPC
 Self-Driving Car Engineer Nanodegree Program
 
 ---
-
+## Overview
+This project implements a Model Predictive Controller (MPC). This controller is tasked to  follow a trajectory path to optimize the path the car should take. A simulator is provided by Uacity which communiates track data via websocket. We need to provide different actuator inputs (steering, acceleration and braking) back to simulator to keep the car on track in most efficient way. 
 ## Dependencies
 
 * cmake >= 3.5
@@ -30,6 +33,8 @@ Self-Driving Car Engineer Nanodegree Program
 * Simulator. You can download these from the [releases tab](https://github.com/udacity/self-driving-car-sim/releases).
 * Not a dependency but read the [DATA.md](./DATA.md) for a description of the data sent back from the simulator.
 
+NOTE: Additionally, I've also confiigured this project to build using `Visual Studio` on Windows platform with `uWebSockets` using instructions listed [here](http://www.codza.com/blog/udacity-uws-in-visualstudio)
+
 
 ## Basic Build Instructions
 
@@ -37,7 +42,6 @@ Self-Driving Car Engineer Nanodegree Program
 2. Make a build directory: `mkdir build && cd build`
 3. Compile: `cmake .. && make`
 4. Run it: `./mpc`.
-
 ## Tips
 
 1. It's recommended to test the MPC on basic examples to see if your implementation behaves as desired. One possible example
@@ -70,39 +74,38 @@ More information is only accessible by people who are already enrolled in Term 2
 of CarND. If you are enrolled, see [the project page](https://classroom.udacity.com/nanodegrees/nd013/parts/40f38239-66b6-46ec-ae68-03afd8a601c8/modules/f1820894-8322-4bb3-81aa-b26b3c6dcbaf/lessons/b1ff3be0-c904-438e-aad3-2b5379f0e0c3/concepts/1a2255a0-e23c-44cf-8d41-39b8a3c8264a)
 for instructions and the project rubric.
 
-## Hints!
+### The Model
 
-* You don't have to follow this directory structure, but if you do, your work
-  will span all of the .cpp files here. Keep an eye out for TODOs.
+This MPC model is based on kinematic bicycle model that neglects the complex interaction between the tires and the road. The parameters for this models are following: 
 
-## Call for IDE Profiles Pull Requests
+* x, y: Car's position (where x= horizontal, y=vertical cordinates)
+* psi(ψ): Car's orientation/direction
+* v: Car's velocity
+* cte: Cross-track error
+* epsi (eψ): Orientation error
 
-Help your fellow students!
+Actuator values (steering angle i.e. delta and throttle) calculated by the MPC. The model combines the state and actuations from the previous timesteps to calculate current state to minimize the cost function using the equations below:
 
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to we ensure
-that students don't feel pressured to use one IDE or another.
+![model]
 
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
+### Timestep Length and Elapsed Duration (N & dt)
 
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
+N   — timestep lenth
 
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
+dt  — elapsed duration between timesteps
 
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
+These are the two hyperparameters required to be tuned to make this controller work. The finall values I selected were `N=10` and `dt=0.1`. Honestly these values are per suggestion in Udacity's office hours for the project. However, I tried to fine tune and play around with other values e.g. ```(N:20, dt:0.05), (N:12, dt:0.05), (N:20, dt:0.5), etc```. In my observation with lower value of N the vehicle may continue to drive straight and off the track. On contrary, increasing the `N` value causes the vehicle to oscillate and overshot the reference trajectory. 
 
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
+A final result will look like this: 
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
+<a href="https://youtu.be/oODwWR3s-us" target="_blank">![final]</a>
+
+### Polynomial Fitting and MPC Preprocessing
+
+The waypoints provided by the simulator are transformed to the car coodrdinate system line line: 112 to 121. Then a third degree polynomial is fitted to the transformed waypoint. These polynomical coefficient are used to calculate the `cte` and `epsi`. They are then used by the `Solve()` to create a reference trajectory.
+
+### Model Predictive Control with Latency
+
+In a real worl scenario the actuation command won't execute instantly. There will be delays for command to physcially take an effect due to nature of the system. We assume a realistic delay might take about 100 ms. 
+
+Therefore, we have added the latency of 100ms in our system to simiulate the real world scenarios. Thus, our intial state should be after 100ms in order to get the optimum control values. 
