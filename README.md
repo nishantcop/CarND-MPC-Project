@@ -94,7 +94,7 @@ N   — timestep lenth
 
 dt  — elapsed duration between timesteps
 
-These are the two hyperparameters required to be tuned to make this controller work. The finall values I selected were `N=10` and `dt=0.1`. Honestly these values are per suggestion in Udacity's office hours for the project. However, I tried to fine tune and play around with other values e.g. ```(N:20, dt:0.05), (N:12, dt:0.05), (N:20, dt:0.5), etc```. In my observation with lower value of N the vehicle may continue to drive straight and off the track. On contrary, increasing the `N` value causes the vehicle to oscillate and overshot the reference trajectory. 
+These are the two hyperparameters required to be tuned to make this controller work. The final values I selected were `N=10` and `dt=0.1`. Honestly, these values are per suggestion in Udacity's office hours for the project. However, I tried to fine tune and play around with other values e.g. ```(N:20, dt:0.05), (N:12, dt:0.05), (N:20, dt:0.5), etc```. In my observation with lower value of N, the vehicle may continue to drive straight and off the track. On contrary, increasing the `N` value causes the vehicle to oscillate and overshot the reference trajectory. 
 
 A final result will look like this: 
 
